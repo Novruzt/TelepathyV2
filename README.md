@@ -58,6 +58,19 @@ Pull requests, fixes, and improvements are welcome.
 
 ---
 
+## Links
+
+Nexus link:
+
+https://www.nexusmods.com/mountandblade2bannerlord/mods/10007
+
+Steam link:
+
+https://steamcommunity.com/sharedfiles/filedetails?id=3662600228
+
+
+---
+
 ## License
 
 MIT License
