@@ -58,16 +58,6 @@ Pull requests, fixes, and improvements are welcome.
 
 ---
 
-## Source Code
-
-The full source code is available on GitHub:
-
-https://github.com/Novruzt/TelepathyV2
-
-You are free to fork the project and make your own changes, fixes, or additions.
-
----
-
 ## License
 
 MIT License
