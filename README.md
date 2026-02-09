@@ -56,6 +56,8 @@ If you encounter any bugs, issues, or unexpected behavior, please report them.
 
 Pull requests, fixes, and improvements are welcome.
 
+You are free to fork the project and make your own changes, fixes, or additions
+
 ---
 
 ## Links
