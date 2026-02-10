@@ -18,7 +18,7 @@ namespace TelepathyV2
             _ = GlobalSettings<TelepathySettings>.Instance;
 
             _harmony = new Harmony("TelepathyV2.Harmony");
-            _harmony.PatchAll(typeof(TelepathySubModule).Assembly);
+            _harmony.PatchAll();
 
             var extender = UIExtender.Create("TelepathyV2");
             extender.Register(typeof(TelepathySubModule).Assembly);

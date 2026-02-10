@@ -91,6 +91,8 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="src\Engine\TelepathyBehaviour.cs" />
     <Compile Include="src\Common\TelepathySettings.cs" />
+    <Compile Include="src\Patches\FlattenedTroopRosterPatch.cs" />
+    <Compile Include="src\Patches\GameMenuManagerPatch.cs" />
     <Compile Include="src\TelepathySubModule.cs" />
   </ItemGroup>
   <ItemGroup>

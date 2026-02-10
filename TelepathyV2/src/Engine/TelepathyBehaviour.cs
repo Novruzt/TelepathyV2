@@ -247,8 +247,24 @@ namespace TelepathyV2
             finally
             {
                 _meetingLock = false;
+
+                ForceExitMenuIfNeeded();
             }
         }
+
+        private static void ForceExitMenuIfNeeded()
+        {
+            try
+            {
+                if (Campaign.Current?.CurrentMenuContext != null)
+                {
+                    var mapState = TaleWorlds.Core.Game.Current?.GameStateManager?.ActiveState as TaleWorlds.CampaignSystem.GameState.MapState;
+                    mapState?.ExitMenuMode();
+                }
+            }
+            catch { }
+        }
+
 
         // ========================= RULES / SETTINGS =========================
 
@@ -364,128 +380,58 @@ namespace TelepathyV2
             if (_meetingLock)
                 return;
 
-            _meetingLock = true;
-
             if (hero == null || Hero.MainHero == null)
                 return;
 
-            if (_meetingEncounter != null)
-                return;
+            _meetingLock = true;
 
-            var player = Hero.MainHero;
-            var playerMp = player.PartyBelongedTo;
-            var playerParty = playerMp != null ? playerMp.Party : null;
-
-            if (playerParty == null)
-                return;
-
-            var heroParty = ResolveHeroParty(hero, player, playerParty);
-            if (heroParty == null)
-                return;
-
-            // backup current state
-            try { _savedEncounter = PlayerEncounter.Current; } catch { _savedEncounter = null; }
+            // Əgər player town / menu içindədirsə – məcburi çıx
+            ForceExitMenuIfNeeded();
 
             try
             {
-                _savedLocation = Campaign.Current != null ? (LocationEncounter)AccessTools.Property(typeof(Campaign), "LocationEncounter")?.GetValue(Campaign.Current) : null;
-            }
-            catch
-            {
-                _savedLocation = null;
-            }
+                var playerParty = PartyBase.MainParty;
+                if (playerParty == null)
+                {
+                    _meetingLock = false;
+                    return;
+                }
 
-            try
-            {
-                _savedSettlement = playerMp.CurrentSettlement;
-            }
-            catch
-            {
-                _savedSettlement = null;
-            }
+                var playerData = new ConversationCharacterData(
+                    CharacterObject.PlayerCharacter,
+                    playerParty,
+                    false, false, false, false, false, false
+                );
 
-            // If hero party is only reachable via settlement, ensure player's settlement points there for mission init
-            try
-            {
-                if (hero.PartyBelongedTo == null && hero.CurrentSettlement != null)
-                    playerMp.CurrentSettlement = hero.CurrentSettlement;
-            }
-            catch
-            {
+                var heroData = new ConversationCharacterData(
+                    hero.CharacterObject,
+                    playerParty,   // 👈 HERO-nun party-si vacib deyil
+                    false, false, false, false, false, false
+                );
 
-            }
+                Campaign.Current.TimeControlMode = CampaignTimeControlMode.Stop;
+                Campaign.Current.CurrentConversationContext = ConversationContext.Default;
 
-            try
-            {
-                PlayerEncounter.Start();
-                PlayerEncounter.Current.SetupFields(playerParty, heroParty);
-
-                _meetingEncounter = PlayerEncounter.Current;
                 _meetingHero = hero;
 
-                if (Campaign.Current != null)
-                {
-                    Campaign.Current.TimeControlMode = CampaignTimeControlMode.Stop;
-                    Campaign.Current.CurrentConversationContext = ConversationContext.Default;
-                }
-
-                AccessTools.Field(typeof(PlayerEncounter), "_mapEventState")?.SetValue(PlayerEncounter.Current, PlayerEncounterState.Begin);
-                AccessTools.Field(typeof(PlayerEncounter), "_stateHandled")?.SetValue(PlayerEncounter.Current, true);
-                AccessTools.Field(typeof(PlayerEncounter), "_meetingDone")?.SetValue(PlayerEncounter.Current, true);
+                CampaignMission.OpenConversationMission(
+                    playerData,
+                    heroData,
+                    "",
+                    "",
+                    false
+                );
             }
             catch
             {
-                _meetingEncounter = null;
                 _meetingHero = null;
+            }
+            finally
+            {
                 _meetingLock = false;
-                return;
-            }
-
-            try
-            {
-                var playerData = new ConversationCharacterData(CharacterObject.PlayerCharacter, playerParty, false, false, false, false, false, false);
-                var heroData = new ConversationCharacterData(hero.CharacterObject, heroParty, false, false, false, false, false, false);
-
-                CampaignMission.OpenConversationMission(playerData, heroData, "", "", false);
-            }
-            catch
-            {
-                OnConversationEnded(null);
             }
         }
 
-        private static PartyBase ResolveHeroParty(Hero hero, Hero player, PartyBase playerParty)
-        {
-            PartyBase heroParty = null;
-
-            try
-            {
-                heroParty = hero.PartyBelongedTo != null ? hero.PartyBelongedTo.Party : null;
-
-                if (heroParty == null || heroParty == playerParty)
-                {
-                    // Fall back to a settlement party reference
-                    if (hero.HomeSettlement != null)
-                        heroParty = hero.HomeSettlement.Party;
-
-                    if (heroParty == null && hero.LastKnownClosestSettlement != null)
-                        heroParty = hero.LastKnownClosestSettlement.Party;
-
-                    if (heroParty == null && player.HomeSettlement != null)
-                        heroParty = player.HomeSettlement.Party;
-                }
-
-                // Wanderers without party may still be in a settlement
-                if (heroParty == null && hero.CurrentSettlement != null)
-                    heroParty = hero.CurrentSettlement.Party;
-            }
-            catch
-            {
-                return null;
-            }
-
-            return heroParty;
-        }
 
         // ========================= DIALOG HELPERS =========================
 
@@ -633,6 +579,26 @@ namespace TelepathyV2
             }
 
             return rel >= minRel;
+        }
+
+        private static bool IsBusyForConversation(Hero hero)
+        {
+            if (hero == null) return true;
+
+            try
+            {
+                if (hero.IsPrisoner) return true;
+
+                var mp = hero.PartyBelongedTo;
+                if (mp != null && mp.MapEvent != null)
+                    return true;
+            }
+            catch
+            {
+                return true;
+            }
+
+            return false;
         }
 
 
