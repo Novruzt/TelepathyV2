@@ -11,6 +11,11 @@ namespace TelepathyV2.Patches
     {
         public static bool Prefix()
         {
+            if (!TelepathyBehaviour.MeetingInProgress)
+            {
+                return true; 
+            }
+
             try
             {
                 if (Campaign.Current?.CurrentMenuContext != null)
@@ -21,7 +26,6 @@ namespace TelepathyV2.Patches
             }
             catch
             {
-                // ignore
             }
 
             return false;

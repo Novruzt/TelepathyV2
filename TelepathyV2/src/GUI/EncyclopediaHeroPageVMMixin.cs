@@ -15,32 +15,45 @@ namespace TelepathyV2
 
         public EncyclopediaHeroPageVMMixin(EncyclopediaHeroPageVM vm) : base(vm)
         {
-            _hero = vm.Obj as Hero;
-            _btnText = new TextObject("{=TelepathyV2_TalkToMe}Talk to me!").ToString();
+            this._hero = (vm.Obj as Hero);
+            this._btnText = new TextObject("{=TelepathyV2_Talk_To_Me}Talk to me!", null).ToString();
+            vm.RefreshValues();
         }
 
         [DataSourceMethod]
         public void CallToTalk()
         {
-            if (_hero == null)
-                return;
-
-            TelepathyBehaviour.CallToTalk(_hero);
-
-            var msg = new TextObject("{=TelepathyV2_Queued}{HeroName} will talk to you soon...");
-            msg.SetTextVariable("HeroName", _hero.Name);
-            InformationManager.DisplayMessage(new InformationMessage(msg.ToString()));
-
-            OnPropertyChanged(nameof(WillNotTalk));
+            TelepathyBehaviour.CallToTalk(this._hero);
+            TextObject textObject = new TextObject("{=TelepathyV2_Hero_Will_Talk}{HeroName} will talk to you soon...", null);
+            textObject.SetTextVariable("HeroName", this._hero.Name);
+            base.OnPropertyChanged("WillNotTalk");
         }
 
         [DataSourceProperty]
-        public string CallToTalkText => _btnText;
+        public string CallToTalkText
+        {
+            get
+            {
+                return this._btnText;
+            }
+        }
 
         [DataSourceProperty]
-        public bool CanTalkTo => _hero != null && _hero.CanTalkTo();
+        public bool CanTalkTo
+        {
+            get
+            {
+                return this._hero.CanTalkTo();
+            }
+        }
 
         [DataSourceProperty]
-        public bool WillNotTalk => _hero != null && TelepathyBehaviour.IsAlreadyQueued(_hero);
+        public bool WillNotTalk
+        {
+            get
+            {
+                return !TelepathyBehaviour.IsAlreadyQueued(this._hero);
+            }
+        }
     }
 }
