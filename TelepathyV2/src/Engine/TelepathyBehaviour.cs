@@ -4,6 +4,7 @@ using System.Linq;
 using HarmonyLib;
 using MCM.Abstractions.Base.Global;
 using TaleWorlds.CampaignSystem;
+using TaleWorlds.CampaignSystem.BarterSystem;
 using TaleWorlds.CampaignSystem.Conversation;
 using TaleWorlds.CampaignSystem.Encounters;
 using TaleWorlds.CampaignSystem.Party;
@@ -17,7 +18,6 @@ namespace TelepathyV2
     {
         private static readonly LinkedList<Call> _queue = new LinkedList<Call>();
 
-        private static PlayerEncounter _meetingEncounter;
         private static Hero _meetingHero;
 
         private static PlayerEncounter _savedEncounter;
@@ -28,7 +28,7 @@ namespace TelepathyV2
 
         private static TelepathySettings Settings => GlobalSettings<TelepathySettings>.Instance;
 
-        public static bool MeetingInProgress => _meetingEncounter != null;
+        public static bool MeetingInProgress => _meetingLock;
 
         // Public API (used by UI button / VM mixin)
         public static void CallToTalk(Hero hero)
@@ -40,11 +40,22 @@ namespace TelepathyV2
                 return;
 
             bool pigeon = Settings.PigeonPostMode;
+            int totalCost = pigeon ? HeroHelper.CalculatePigeonCost(hero) : 0;
+
+            if (pigeon && Settings.PigeonCostsMoney)
+            {
+                if (Hero.MainHero.Gold < totalCost)
+                {
+                    InformationManager.DisplayMessage(new InformationMessage(
+                        new TextObject("{=TPV2_NotEnoughGold}Not enough gold! You need {COST} gold.").SetTextVariable("COST", totalCost).ToString()));
+                    return;
+                }
+            }
 
             if (!MeetsRelationshipRequirement(hero, pigeon))
                 return;
 
-            Call call = pigeon ? (Call)new PigeonPostCall(hero) : new DelayedCall(hero);
+            Call call = pigeon ? (Call)new PigeonPostCall(hero, totalCost) : new DelayedCall(hero, totalCost);
 
             _queue.AddLast(call);
         }
@@ -79,7 +90,6 @@ namespace TelepathyV2
             _meetingLock = false;
 
             _queue.Clear();
-            _meetingEncounter = null;
             _meetingHero = null;
 
             _savedEncounter = null;
@@ -192,21 +202,27 @@ namespace TelepathyV2
             if (ready == null)
                 return;
 
-            if (!MeetsRelationshipRequirement(ready.Hero, ready.IsPigeon))
+            // Rule check: Relationship and Prisoner/Met status
+            if (!MeetsRelationshipRequirement(ready.Hero, ready.IsPigeon) || !CanRequestConversation(ready.Hero))
             {
-                _queue.Remove(ready);
-                return;
-            }
-
-            // settings: dead restriction
-            if (!CanTalkToDead(ready.Hero))
-            {
-                _queue.Remove(ready);
+              _queue.Remove(ready);
                 return;
             }
 
             if (!CanStartMeetingNow(ready.Hero))
                 return;
+
+            if (ready.Cost > 0)
+            {
+                if (Hero.MainHero.Gold < ready.Cost)
+                {
+                    InformationManager.DisplayMessage(new InformationMessage("You spent your gold while the pigeon was flying! Communication failed."));
+                    _queue.Remove(ready);
+                    return;
+                }
+
+                Hero.MainHero.Gold -= ready.Cost;
+            }
 
             _queue.Remove(ready);
             StartMeeting(ready.Hero);
@@ -214,12 +230,8 @@ namespace TelepathyV2
 
         private void OnConversationEnded(IEnumerable<CharacterObject> _)
         {
-            if (_meetingEncounter == null)
-                return;
-
             try { PlayerEncounter.Finish(false); } catch { }
 
-            _meetingEncounter = null;
             _meetingHero = null;
 
             try
@@ -247,7 +259,6 @@ namespace TelepathyV2
             finally
             {
                 _meetingLock = false;
-
                 ForceExitMenuIfNeeded();
             }
         }
@@ -276,15 +287,11 @@ namespace TelepathyV2
 
             if (hero == Hero.MainHero) return false;
 
-            if (MeetingInProgress) return false;
+            if (hero.IsDead || Hero.MainHero.IsDead) return false;
 
-            // settings: dead restriction
-            var canTalkToDead = CanTalkToDead(hero);
+            var settings = GlobalSettings<TelepathySettings>.Instance;
 
-            if (!canTalkToDead)
-                return false;
-
-            // settings: met restriction
+            // settings: met restriction check
             bool hasMet;
             try { hasMet = hero.HasMet; }
             catch { hasMet = true; }
@@ -292,10 +299,9 @@ namespace TelepathyV2
             if (!hasMet && Settings.PreventTalkingToHeroesHaveNotMetBefore)
                 return false;
 
-            // If hero is a prisoner or in a map event right now, don't allow scheduling
             try
             {
-                if (hero.IsPrisoner)
+                if (hero.IsPrisoner && settings.PreventTalkingToPrisoners)
                     return false;
 
                 var hp = hero.PartyBelongedTo;
@@ -310,30 +316,12 @@ namespace TelepathyV2
             return true;
         }
 
-        private static bool CanTalkToDead(Hero hero)
-        {
-            bool alive;
-            try
-            {
-                alive = hero.IsAlive;
-            }
-            catch
-            {
-                alive = false;
-            }
-
-            if (!alive && Settings.PreventTalkingToDead)
-                alive = false;
-            else
-                alive = true;
-
-            return alive;
-        }
-
         private static bool IsPlayerFree()
         {
             if (Hero.MainHero == null)
                 return false;
+
+            if(Hero.MainHero.IsDead) return false;
 
             try
             {
@@ -354,11 +342,9 @@ namespace TelepathyV2
 
         private static bool CanStartMeetingNow(Hero hero)
         {
-            // Re-check settings at meeting time too (hero can die / become not-met / etc)
             if (!CanRequestConversation(hero))
                 return false;
 
-            // Meeting requires a valid player party
             try
             {
                 var playerParty = Hero.MainHero.PartyBelongedTo?.Party;
@@ -384,8 +370,6 @@ namespace TelepathyV2
                 return;
 
             _meetingLock = true;
-
-            // Əgər player town / menu içindədirsə – məcburi çıx
             ForceExitMenuIfNeeded();
 
             try
@@ -397,30 +381,15 @@ namespace TelepathyV2
                     return;
                 }
 
-                var playerData = new ConversationCharacterData(
-                    CharacterObject.PlayerCharacter,
-                    playerParty,
-                    false, false, false, false, false, false
-                );
-
-                var heroData = new ConversationCharacterData(
-                    hero.CharacterObject,
-                    playerParty,   // 👈 HERO-nun party-si vacib deyil
-                    false, false, false, false, false, false
-                );
+                var playerData = new ConversationCharacterData(CharacterObject.PlayerCharacter, playerParty, false, false, false, false, false, false);
+                var heroData = new ConversationCharacterData(hero.CharacterObject, playerParty, false, false, false, false, false, false);
 
                 Campaign.Current.TimeControlMode = CampaignTimeControlMode.Stop;
                 Campaign.Current.CurrentConversationContext = ConversationContext.Default;
 
                 _meetingHero = hero;
 
-                CampaignMission.OpenConversationMission(
-                    playerData,
-                    heroData,
-                    "",
-                    "",
-                    false
-                );
+                CampaignMission.OpenConversationMission(playerData, heroData, "", "", false);
             }
             catch
             {
@@ -428,7 +397,6 @@ namespace TelepathyV2
             }
             finally
             {
-                _meetingLock = false;
             }
         }
 
@@ -464,15 +432,8 @@ namespace TelepathyV2
             if (ShouldRefuseAnswer())
                 return new TextObject("{=TPV2_NotYourBusiness}It's not your business!").ToString();
 
-            try
-            {
-                if (_meetingHero.PartyBelongedTo == null)
-                    return new TextObject("{=TPV2_Nothing}Nothing actually.").ToString();
-            }
-            catch
-            {
+            if (_meetingHero.PartyBelongedTo == null)
                 return new TextObject("{=TPV2_Nothing}Nothing actually.").ToString();
-            }
 
             return new TextObject("{=TPV2_Moving}I'm on the move.").ToString();
         }
@@ -540,10 +501,7 @@ namespace TelepathyV2
                     };
                 }
             }
-            catch
-            {
-                // Intentionally ignored: sentence blocking is optional.
-            }
+            catch { }
         }
 
         private static bool MeetsRelationshipRequirement(Hero hero, bool isPigeonCall)
@@ -551,34 +509,21 @@ namespace TelepathyV2
             if (hero == null || Hero.MainHero == null)
                 return false;
 
-            // If the setting is disabled, always pass.
             if (!Settings.RequireMinimumRelationship)
                 return true;
 
-            // Direct telepathy ALWAYS uses the rule.
-            // Pigeon uses it only if enabled.
             if (isPigeonCall && !Settings.ApplyRelationshipRuleToPigeon)
                 return true;
 
             int minRel = Settings.MinimumRelationshipToTalk;
-
-            // No requirement? Always pass.
             if (minRel <= -100)
                 return true;
 
-            int rel;
             try
             {
-                // This is the common API in Bannerlord for hero relations.
-                rel = Hero.MainHero.GetRelation(hero);
+                return Hero.MainHero.GetRelation(hero) >= minRel;
             }
-            catch
-            {
-                // If relation API is unavailable in your version, fail safe (don't allow).
-                return false;
-            }
-
-            return rel >= minRel;
+            catch { return false; }
         }
 
         private static bool IsBusyForConversation(Hero hero)
@@ -587,7 +532,7 @@ namespace TelepathyV2
 
             try
             {
-                if (hero.IsPrisoner) return true;
+                if (hero.IsPrisoner && Settings.PreventTalkingToPrisoners) return true;
 
                 var mp = hero.PartyBelongedTo;
                 if (mp != null && mp.MapEvent != null)
@@ -606,14 +551,16 @@ namespace TelepathyV2
 
         private abstract class Call
         {
-            protected Call(Hero hero)
+            protected Call(Hero hero, int cost)
             {
                 Hero = hero;
+                Cost = cost;
                 Ready = false;
             }
 
             public Hero Hero { get; private set; }
             public bool Ready { get; protected set; }
+            public int Cost { get; private set; }
 
             public abstract bool IsPigeon { get; }
             public abstract void HourlyTick();
@@ -624,7 +571,7 @@ namespace TelepathyV2
             private int _hoursLeft;
             public override bool IsPigeon => false;
 
-            public DelayedCall(Hero hero) : base(hero)
+            public DelayedCall(Hero hero, int cost) : base(hero, cost)
             {
                 _hoursLeft = Math.Max(0, Settings.MinDelayHours);
                 Ready = _hoursLeft == 0;
@@ -632,7 +579,7 @@ namespace TelepathyV2
 
             public override void HourlyTick()
             {
-                if (Ready)
+                if (Ready) 
                     return;
 
                 _hoursLeft--;
@@ -644,46 +591,42 @@ namespace TelepathyV2
         private sealed class PigeonPostCall : Call
         {
             public override bool IsPigeon => true;
-            private Vec2 _position;
+            private CampaignVec2 _position;
             private bool _returning;
+            private int _minDelayLeft;
 
-            public PigeonPostCall(Hero hero) : base(hero)
+            public PigeonPostCall(Hero hero, int cost) : base(hero, cost)
             {
                 var start = HeroHelper.TryGetHeroPosition(Hero.MainHero);
-                _position = start ?? Vec2.Zero;
+                _position = start ?? CampaignVec2.Zero;
                 _returning = false;
 
                 // Apply minimum delay even in pigeon mode
                 _minDelayLeft = Math.Max(0, Settings.MinDelayHours);
             }
 
-            private int _minDelayLeft;
-
             public override void HourlyTick()
             {
-                if (Ready)
+                if (Ready) 
                     return;
 
-                // First: minimum delay gate
                 if (_minDelayLeft > 0)
                 {
                     _minDelayLeft--;
-                    if (_minDelayLeft > 0)
+                    if (_minDelayLeft > 0) 
                         return;
                 }
 
                 float speed = Math.Max(1f, Settings.PigeonSpeedPerHour);
 
-                Vec2 target;
+                CampaignVec2 target;
                 if (!_returning)
                 {
-                    var heroPos = HeroHelper.TryGetHeroPosition(Hero);
-                    target = heroPos ?? _position;
+                    target = HeroHelper.TryGetHeroPosition(Hero) ?? _position;
                 }
                 else
                 {
-                    var playerPos = HeroHelper.TryGetHeroPosition(Hero.MainHero);
-                    target = playerPos ?? _position;
+                    target = HeroHelper.TryGetHeroPosition(Hero.MainHero) ?? _position;
                 }
 
                 var diff = target - _position;
@@ -692,18 +635,16 @@ namespace TelepathyV2
                 if (dist <= speed)
                 {
                     _position = target;
-
                     if (!_returning)
                     {
                         _returning = true;
                         return;
                     }
-
                     Ready = true;
                     return;
                 }
 
-                _position += diff.Normalized() * speed;
+                _position += CampaignVec2.Normalized(diff) * speed;
             }
         }
     }

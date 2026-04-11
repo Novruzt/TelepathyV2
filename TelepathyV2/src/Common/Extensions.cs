@@ -1,8 +1,8 @@
-﻿using System;
+﻿using HarmonyLib;
+using MCM.Abstractions.Base.Global;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using HarmonyLib;
-using MCM.Abstractions.Base.Global;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Conversation;
 
@@ -15,9 +15,11 @@ namespace TelepathyV2
             if (hero == null) return false;
             if (hero == Hero.MainHero) return false;
 
+            if (hero.IsDead || Hero.MainHero.IsDead) return false;
+
             var settings = GlobalSettings<TelepathySettings>.Instance;
 
-            if (!hero.IsAlive && settings.PreventTalkingToDead)
+            if (hero.IsPrisoner && settings.PreventTalkingToPrisoners)
                 return false;
 
             if (!hero.HasMet && settings.PreventTalkingToHeroesHaveNotMetBefore)

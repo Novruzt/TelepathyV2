@@ -16,10 +16,10 @@ namespace TelepathyV2
         // =========================
 
         [SettingPropertyGroup("Distant conversation realism", GroupOrder = (int)GroupOrder.DistantConversationRealism)]
-        [SettingPropertyBool("Prevent talking to dead",
-            HintText = "Prevents distant conversations with dead heroes.",
+        [SettingPropertyBool("Prevent talking to prisoners",
+            HintText = "Prevents distant conversations with prisoners.",
             Order = 0, RequireRestart = false)]
-        public bool PreventTalkingToDead { get; set; } = true;
+        public bool PreventTalkingToPrisoners { get; set; } = true;
 
         [SettingPropertyGroup("Distant conversation realism", GroupOrder = (int)GroupOrder.DistantConversationRealism)]
         [SettingPropertyBool("Prevent talking to heroes you haven't met",
@@ -77,5 +77,29 @@ namespace TelepathyV2
             HintText = "Higher value means faster delivery.",
             Order = 2, RequireRestart = false)]
         public int PigeonSpeedPerHour { get; set; } = 30;
+
+        [SettingPropertyGroup("Pigeon post mode", GroupOrder = (int)GroupOrder.PigeonPostMode)]
+        [SettingPropertyBool("Pigeon Costs Money",
+            HintText = "If enabled, sending a pigeon will cost gold.",
+            Order = 3, RequireRestart = false)]
+        public bool PigeonCostsMoney { get; set; } = false;
+
+        [SettingPropertyGroup("Pigeon post mode", GroupOrder = (int)GroupOrder.PigeonPostMode)]
+        [SettingPropertyInteger("Minimum Cost", 0, 100000,
+            HintText = "The minimum cost for sending a pigeon. If Distance Multiplier is set to 0, this becomes a fixed cost for all distances.",
+            Order = 4, RequireRestart = false)]
+        public int PigeonBaseCost { get; set; } = 100;
+
+        [SettingPropertyGroup("Pigeon post mode", GroupOrder = (int)GroupOrder.PigeonPostMode)]
+        [SettingPropertyFloatingInteger("Distance Multiplier", 0.0f, 100.0f,
+            HintText = "Set to 0 for a flat fee (Minimum Cost). Set higher than 0 to scale the total cost based on distance.",
+            Order = 5, RequireRestart = false)]
+        public float PigeonDistanceMultiplier { get; set; } = 0.0f;
+
+        [SettingPropertyGroup("Pigeon post mode", GroupOrder = (int)GroupOrder.PigeonPostMode)]
+        [SettingPropertyFloatingInteger("Cost Per Distance Unit", 0, 100000,
+           HintText = "The base cost per map unit. This value is multiplied by the distance and Distance Multiplier. The final cost will never be lower than the Minimum Cost.",
+           Order = 6, RequireRestart = false)]
+        public float CostPerDistance { get; set; } = 10;
     }
 }
