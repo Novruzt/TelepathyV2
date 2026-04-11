@@ -230,6 +230,13 @@ namespace TelepathyV2
 
         private void OnConversationEnded(IEnumerable<CharacterObject> _)
         {
+
+            if (_meetingHero == null)
+                return;
+
+            if (!_meetingLock)
+                return;
+
             try { PlayerEncounter.Finish(false); } catch { }
 
             _meetingHero = null;
@@ -258,8 +265,8 @@ namespace TelepathyV2
             }
             finally
             {
-                _meetingLock = false;
                 ForceExitMenuIfNeeded();
+                _meetingLock = false;
             }
         }
 
@@ -267,10 +274,13 @@ namespace TelepathyV2
         {
             try
             {
-                if (Campaign.Current?.CurrentMenuContext != null)
+                if (_meetingLock)
                 {
-                    var mapState = TaleWorlds.Core.Game.Current?.GameStateManager?.ActiveState as TaleWorlds.CampaignSystem.GameState.MapState;
-                    mapState?.ExitMenuMode();
+                    if (Campaign.Current?.CurrentMenuContext != null)
+                    {
+                        var mapState = TaleWorlds.Core.Game.Current?.GameStateManager?.ActiveState as TaleWorlds.CampaignSystem.GameState.MapState;
+                        mapState?.ExitMenuMode();
+                    }
                 }
             }
             catch { }
